@@ -1,0 +1,996 @@
+"""生成离线知识库静态网站"""
+
+import json
+import os
+import sys
+import re
+import hashlib
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).parent
+SKILL_DIR = SCRIPT_DIR.parent
+OUTPUT_DIR = SKILL_DIR / "output"
+DATA_FILE = OUTPUT_DIR / "data" / "articles.json"
+SITE_DIR = OUTPUT_DIR / "site"
+
+# 从 sources.py 导入配置
+sys.path.insert(0, str(SCRIPT_DIR))
+from sources import SOURCE_COLORS, SOURCE_NAMES, SEMANTIC_TAGS
+
+TAGS = SEMANTIC_TAGS
+
+
+def load_articles():
+    if not DATA_FILE.exists():
+        print(f"数据文件不存在: {DATA_FILE}")
+        return []
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def generate_site():
+    articles = load_articles()
+    if not articles:
+        print("没有文章数据，请先抓取文章")
+        return
+
+    SITE_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 按日期排序（新到旧）
+    articles.sort(key=lambda a: a.get("date", ""), reverse=True)
+
+    articles_json = json.dumps(articles, ensure_ascii=False)
+    source_colors_json = json.dumps(SOURCE_COLORS, ensure_ascii=False)
+    source_names_json = json.dumps(SOURCE_NAMES, ensure_ascii=False)
+    tags_json = json.dumps(TAGS, ensure_ascii=False)
+
+    html = generate_html(articles_json, source_colors_json, source_names_json, tags_json)
+
+    index_path = SITE_DIR / "index.html"
+    with open(index_path, "w", encoding="utf-8") as f:
+        f.write(html)
+
+    print(f"网站已生成: {index_path}")
+    print(f"共 {len(articles)} 篇文章")
+    return str(index_path)
+
+
+def generate_html(articles_json, source_colors_json, source_names_json, tags_json):
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Tech Blog Hub - 大厂技术博客知识库</title>
+<style>
+:root {{
+    --bg: #fafaf9;
+    --card-bg: #ffffff;
+    --text: #1c1917;
+    --text-secondary: #78716c;
+    --text-tertiary: #a8a29e;
+    --border: #e7e5e4;
+    --accent: #d4944b;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    --radius: 10px;
+    --radius-sm: 6px;
+}}
+
+@media (prefers-color-scheme: dark) {{
+    :root {{
+        --bg: #1c1917;
+        --card-bg: #292524;
+        --text: #fafaf9;
+        --text-secondary: #a8a29e;
+        --text-tertiary: #78716c;
+        --border: #44403c;
+        --shadow: 0 1px 3px rgba(0,0,0,0.3);
+        --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+    }}
+}}
+
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+
+body {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    min-height: 100vh;
+}}
+
+.container {{
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 24px;
+}}
+
+/* Header */
+.header {{
+    padding: 48px 0 32px;
+    text-align: center;
+}}
+
+.header h1 {{
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+}}
+
+.header p {{
+    color: var(--text-secondary);
+    font-size: 14px;
+}}
+
+/* Stats bar */
+.stats {{
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+}}
+
+.stat-item {{
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 16px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}}
+
+.stat-item strong {{
+    color: var(--text);
+    font-weight: 600;
+}}
+
+/* Search */
+.search-wrap {{
+    position: relative;
+    margin-bottom: 20px;
+}}
+
+.search-wrap input {{
+    width: 100%;
+    padding: 12px 16px 12px 44px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card-bg);
+    font-size: 15px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}}
+
+.search-wrap input:focus {{
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(212,148,75,0.15);
+}}
+
+.search-wrap input::placeholder {{
+    color: var(--text-tertiary);
+}}
+
+.search-icon {{
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-tertiary);
+    pointer-events: none;
+}}
+
+/* Filters */
+.filters {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 24px;
+}}
+
+.filter-chip {{
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 13px;
+    cursor: pointer;
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    transition: all 0.15s;
+    user-select: none;
+    white-space: nowrap;
+}}
+
+.filter-chip:hover {{
+    border-color: var(--text-tertiary);
+    color: var(--text);
+}}
+
+.filter-chip.active {{
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+}}
+
+.filter-chip.source-chip {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}}
+
+.source-dot {{
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+}}
+
+/* Tag filters */
+.tag-filters {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 28px;
+}}
+
+.tag-chip {{
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    font-size: 12px;
+    cursor: pointer;
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    transition: all 0.15s;
+    user-select: none;
+}}
+
+.tag-chip:hover {{
+    border-color: var(--text-tertiary);
+}}
+
+.tag-chip.active {{
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+}}
+
+.tag-chip .count {{
+    color: var(--text-tertiary);
+    font-size: 11px;
+    margin-left: 2px;
+}}
+
+.tag-chip.active .count {{
+    color: var(--bg);
+    opacity: 0.7;
+}}
+
+/* Article list */
+.article-list {{
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}}
+
+.article-card {{
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    cursor: pointer;
+    transition: all 0.15s;
+    box-shadow: var(--shadow);
+}}
+
+.article-card:hover {{
+    box-shadow: var(--shadow-md);
+    border-color: var(--text-tertiary);
+}}
+
+.article-card.read {{
+    opacity: 0.7;
+}}
+
+.card-header {{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}}
+
+.source-badge {{
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}}
+
+.card-date {{
+    font-size: 12px;
+    color: var(--text-tertiary);
+}}
+
+.card-title {{
+    font-size: 17px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    line-height: 1.5;
+    color: var(--text);
+}}
+
+.card-summary {{
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 10px;
+}}
+
+.card-meta {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}}
+
+.reading-time {{
+    font-size: 12px;
+    color: var(--text-tertiary);
+}}
+
+.card-tags {{
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+}}
+
+.card-tag {{
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    background: var(--bg);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}}
+
+/* Empty state */
+.empty {{
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-tertiary);
+}}
+
+.empty-icon {{
+    font-size: 48px;
+    margin-bottom: 16px;
+}}
+
+/* Article detail overlay */
+.overlay {{
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 100;
+    overflow-y: auto;
+}}
+
+.overlay.open {{
+    display: block;
+}}
+
+.overlay-header {{
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 10;
+    backdrop-filter: blur(12px);
+}}
+
+.back-btn {{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--card-bg);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+}}
+
+.back-btn:hover {{
+    background: var(--border);
+}}
+
+.overlay-nav {{
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+}}
+
+.nav-btn {{
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--card-bg);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+}}
+
+.nav-btn:hover:not(:disabled) {{
+    background: var(--border);
+}}
+
+.nav-btn:disabled {{
+    opacity: 0.4;
+    cursor: default;
+}}
+
+.article-content {{
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+}}
+
+.article-content h1 {{
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    line-height: 1.4;
+}}
+
+.article-meta {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+}}
+
+.article-body {{
+    font-size: 16px;
+    line-height: 1.9;
+}}
+
+.article-body h1, .article-body h2, .article-body h3 {{
+    margin-top: 36px;
+    margin-bottom: 16px;
+    font-weight: 600;
+    line-height: 1.4;
+}}
+
+.article-body h2 {{
+    font-size: 22px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+}}
+
+.article-body h3 {{
+    font-size: 18px;
+}}
+
+.article-body p {{
+    margin-bottom: 16px;
+}}
+
+.article-body code {{
+    background: var(--bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    border: 1px solid var(--border);
+}}
+
+.article-body pre {{
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    overflow-x: auto;
+    margin-bottom: 16px;
+    font-size: 14px;
+    line-height: 1.5;
+}}
+
+.article-body pre code {{
+    background: none;
+    padding: 0;
+    border: none;
+}}
+
+.article-body blockquote {{
+    border-left: 3px solid var(--accent);
+    padding-left: 16px;
+    margin-bottom: 16px;
+    color: var(--text-secondary);
+}}
+
+.article-body ul, .article-body ol {{
+    margin-bottom: 16px;
+    padding-left: 24px;
+}}
+
+.article-body li {{
+    margin-bottom: 6px;
+}}
+
+.article-body img {{
+    max-width: 100%;
+    border-radius: var(--radius-sm);
+}}
+
+/* TOC */
+.toc {{
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    margin-bottom: 32px;
+}}
+
+.toc-title {{
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}}
+
+.toc a {{
+    display: block;
+    padding: 3px 0;
+    font-size: 14px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color 0.15s;
+}}
+
+.toc a:hover {{
+    color: var(--text);
+}}
+
+.toc a.toc-h3 {{
+    padding-left: 16px;
+    font-size: 13px;
+}}
+
+/* Read mark */
+.read-mark {{
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    transition: all 0.15s;
+}}
+
+.read-mark.marked {{
+    background: #e8f5e9;
+    color: #2e7d32;
+    border-color: #a5d6a7;
+}}
+
+@media (prefers-color-scheme: dark) {{
+    .read-mark.marked {{
+        background: #1b4332;
+        color: #81c784;
+        border-color: #2e7d32;
+    }}
+}}
+
+/* Result count */
+.result-count {{
+    font-size: 13px;
+    color: var(--text-tertiary);
+    margin-bottom: 16px;
+}}
+
+/* Responsive */
+@media (max-width: 640px) {{
+    .header {{ padding: 32px 0 24px; }}
+    .header h1 {{ font-size: 22px; }}
+    .article-card {{ padding: 16px; }}
+    .card-title {{ font-size: 15px; }}
+    .article-content h1 {{ font-size: 22px; }}
+}}
+</style>
+</head>
+<body>
+
+<div class="container" id="main-view">
+    <header class="header">
+        <h1>AI Tech Blog Hub</h1>
+        <p>大厂AI技术博客 · 个人知识库</p>
+    </header>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="search-wrap">
+        <span class="search-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        </span>
+        <input type="text" id="search-input" placeholder="搜索文章标题、摘要、内容..." autocomplete="off">
+    </div>
+
+    <div class="filters" id="source-filters"></div>
+    <div class="tag-filters" id="tag-filters"></div>
+
+    <div class="result-count" id="result-count"></div>
+    <div class="article-list" id="article-list"></div>
+    <div class="empty" id="empty" style="display:none">
+        <div class="empty-icon">📭</div>
+        <p>没有找到匹配的文章</p>
+    </div>
+</div>
+
+<div class="overlay" id="overlay">
+    <div class="overlay-header">
+        <button class="back-btn" onclick="closeArticle()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+            返回列表
+        </button>
+        <div class="overlay-nav">
+            <button class="nav-btn" id="prev-btn" onclick="navigateArticle(-1)" disabled>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+                上一篇
+            </button>
+            <button class="read-mark" id="read-mark-btn" onclick="toggleRead()">✓ 已读</button>
+            <button class="nav-btn" id="next-btn" onclick="navigateArticle(1)" disabled>
+                下一篇
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+        </div>
+    </div>
+    <div class="article-content" id="article-content"></div>
+</div>
+
+<script>
+const ARTICLES = {articles_json};
+const SOURCE_COLORS = {source_colors_json};
+const SOURCE_NAMES = {source_names_json};
+const ALL_TAGS = {tags_json};
+
+let currentSource = null;
+let currentTag = null;
+let currentArticleId = null;
+
+// 已读记录
+function getReadSet() {{
+    try {{ return new Set(JSON.parse(localStorage.getItem('techblog_read') || '[]')); }}
+    catch {{ return new Set(); }}
+}}
+
+function isRead(id) {{ return getReadSet().has(id); }}
+
+function toggleRead() {{
+    if (!currentArticleId) return;
+    const read = getReadSet();
+    if (read.has(currentArticleId)) read.delete(currentArticleId);
+    else read.add(currentArticleId);
+    localStorage.setItem('techblog_read', JSON.stringify([...read]));
+    updateReadButton();
+    renderList();
+}}
+
+function updateReadButton() {{
+    const btn = document.getElementById('read-mark-btn');
+    if (!currentArticleId) return;
+    if (isRead(currentArticleId)) {{
+        btn.textContent = '✓ 已读';
+        btn.classList.add('marked');
+    }} else {{
+        btn.textContent = '○ 标记已读';
+        btn.classList.remove('marked');
+    }}
+}}
+
+// 搜索
+let searchQuery = '';
+
+function getFilteredArticles() {{
+    let filtered = ARTICLES;
+    if (currentSource) filtered = filtered.filter(a => a.source === currentSource);
+    if (currentTag) filtered = filtered.filter(a => (a.tags || []).includes(currentTag));
+    if (searchQuery) {{
+        const q = searchQuery.toLowerCase();
+        filtered = filtered.filter(a => {{
+            return (a.title_zh || a.title || '').toLowerCase().includes(q)
+                || (a.title || '').toLowerCase().includes(q)
+                || (a.summary_zh || '').toLowerCase().includes(q)
+                || (a.content_zh || '').toLowerCase().includes(q)
+                || (a.tags || []).some(t => t.toLowerCase().includes(q));
+        }});
+    }}
+    return filtered;
+}}
+
+// 渲染
+function renderStats() {{
+    const sources = {{}};
+    let total = ARTICLES.length;
+    ARTICLES.forEach(a => {{ sources[a.source] = (sources[a.source] || 0) + 1; }});
+    let html = `<div class="stat-item">共 <strong>${{total}}</strong> 篇文章</div>`;
+    for (const [s, c] of Object.entries(sources)) {{
+        html += `<div class="stat-item">${{SOURCE_NAMES[s] || s}}: <strong>${{c}}</strong> 篇</div>`;
+    }}
+    document.getElementById('stats').innerHTML = html;
+}}
+
+function renderSourceFilters() {{
+    const sources = {{}};
+    ARTICLES.forEach(a => {{ sources[a.source] = (sources[a.source] || 0) + 1; }});
+    let html = `<span class="filter-chip${{!currentSource ? ' active' : ''}}" onclick="setSource(null)">全部</span>`;
+    for (const [s, c] of Object.entries(sources)) {{
+        const color = SOURCE_COLORS[s] || {{dot:'#888'}};
+        html += `<span class="filter-chip source-chip${{currentSource === s ? ' active' : ''}}" onclick="setSource('${{s}}')">
+            <span class="source-dot" style="background:${{color.dot}}"></span>
+            ${{SOURCE_NAMES[s] || s}}
+        </span>`;
+    }}
+    document.getElementById('source-filters').innerHTML = html;
+}}
+
+function renderTagFilters() {{
+    const tagCounts = {{}};
+    ARTICLES.forEach(a => {{
+        (a.tags || []).forEach(t => {{ tagCounts[t] = (tagCounts[t] || 0) + 1; }});
+    }});
+    const sorted = Object.entries(tagCounts).sort((a,b) => b[1] - a[1]);
+    let html = '';
+    for (const [tag, count] of sorted) {{
+        html += `<span class="tag-chip${{currentTag === tag ? ' active' : ''}}" onclick="setTag('${{tag}}')">${{tag}}<span class="count">${{count}}</span></span>`;
+    }}
+    document.getElementById('tag-filters').innerHTML = html;
+}}
+
+function setSource(source) {{
+    currentSource = source;
+    currentTag = null;
+    renderSourceFilters();
+    renderTagFilters();
+    renderList();
+}}
+
+function setTag(tag) {{
+    currentTag = currentTag === tag ? null : tag;
+    if (currentTag) currentSource = null;
+    renderSourceFilters();
+    renderTagFilters();
+    renderList();
+}}
+
+function renderList() {{
+    const filtered = getFilteredArticles();
+    document.getElementById('result-count').textContent = `显示 ${{filtered.length}} 篇`;
+
+    if (filtered.length === 0) {{
+        document.getElementById('article-list').innerHTML = '';
+        document.getElementById('empty').style.display = 'block';
+        return;
+    }}
+    document.getElementById('empty').style.display = 'none';
+
+    let html = '';
+    filtered.forEach(a => {{
+        const srcColor = SOURCE_COLORS[a.source] || {{bg:'#f5f5f5', text:'#666', dot:'#888'}};
+        const srcName = SOURCE_NAMES[a.source] || a.source;
+        const tags = (a.tags || []).map(t => `<span class="card-tag">${{t}}</span>`).join('');
+        const read = isRead(a.id) ? ' read' : '';
+        const title = a.title_zh || a.title;
+        const summary = a.summary_zh || '';
+        const readingTime = a.reading_time_min || 5;
+
+        html += `
+        <div class="article-card${{read}}" onclick="openArticle('${{a.id}}')">
+            <div class="card-header">
+                <span class="source-badge" style="background:${{srcColor.bg}}; color:${{srcColor.text}}">
+                    <span class="source-dot" style="background:${{srcColor.dot}}"></span>
+                    ${{srcName}}
+                </span>
+                <span class="card-date">${{a.date || ''}}</span>
+            </div>
+            <div class="card-title">${{title}}</div>
+            ${{summary ? `<div class="card-summary">${{summary}}</div>` : ''}}
+            <div class="card-meta">
+                <span class="reading-time">⏱ ${{readingTime}} 分钟</span>
+                <div class="card-tags">${{tags}}</div>
+            </div>
+        </div>`;
+    }});
+    document.getElementById('article-list').innerHTML = html;
+}}
+
+function openArticle(id) {{
+    const a = ARTICLES.find(x => x.id === id);
+    if (!a) return;
+    currentArticleId = id;
+    const idx = ARTICLES.findIndex(x => x.id === id);
+
+    // 导航按钮
+    document.getElementById('prev-btn').disabled = idx <= 0;
+    document.getElementById('next-btn').disabled = idx >= ARTICLES.length - 1;
+    updateReadButton();
+
+    const srcColor = SOURCE_COLORS[a.source] || {{bg:'#f5f5f5', text:'#666', dot:'#888'}};
+    const srcName = SOURCE_NAMES[a.source] || a.source;
+    const tags = (a.tags || []).map(t => `<span class="card-tag">${{t}}</span>`).join('');
+    const title = a.title_zh || a.title;
+
+    let contentHtml = a.content_zh || a.content_md || '';
+    // 简单 Markdown 转 HTML
+    contentHtml = renderMarkdown(contentHtml);
+
+    // 生成目录
+    const toc = generateTOC(contentHtml);
+
+    const originalUrl = a.url ? `<a href="${{a.url}}" target="_blank" style="font-size:13px;color:var(--text-tertiary);text-decoration:none;">查看原文 →</a>` : '';
+
+    document.getElementById('article-content').innerHTML = `
+        <h1>${{title}}</h1>
+        <div class="article-meta">
+            <span class="source-badge" style="background:${{srcColor.bg}}; color:${{srcColor.text}}">
+                <span class="source-dot" style="background:${{srcColor.dot}}"></span>
+                ${{srcName}}
+            </span>
+            <span style="font-size:13px;color:var(--text-tertiary)">${{a.date || ''}}</span>
+            <span style="font-size:13px;color:var(--text-tertiary)">⏱ ${{a.reading_time_min || 5}} 分钟</span>
+            <div style="display:flex;gap:5px">${{tags}}</div>
+            ${{originalUrl}}
+        </div>
+        ${{toc}}
+        <div class="article-body">${{contentHtml}}</div>
+    `;
+
+    // 标记为已读
+    const read = getReadSet();
+    read.add(id);
+    localStorage.setItem('techblog_read', JSON.stringify([...read]));
+    updateReadButton();
+
+    document.getElementById('overlay').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    window.scrollTo(0, 0);
+}}
+
+function closeArticle() {{
+    document.getElementById('overlay').classList.remove('open');
+    document.body.style.overflow = '';
+    currentArticleId = null;
+    renderList();
+}}
+
+function navigateArticle(dir) {{
+    if (!currentArticleId) return;
+    const idx = ARTICLES.findIndex(x => x.id === currentArticleId);
+    const newIdx = idx + dir;
+    if (newIdx >= 0 && newIdx < ARTICLES.length) {{
+        openArticle(ARTICLES[newIdx].id);
+    }}
+}}
+
+function generateTOC(html) {{
+    const matches = html.match(/<h[23][^>]*>.*?<\\/h[23]>/gi);
+    if (!matches || matches.length < 4) return '';
+    let tocHtml = '<div class="toc"><div class="toc-title">目录</div>';
+    matches.forEach(m => {{
+        const isH3 = m.toLowerCase().startsWith('<h3');
+        const text = m.replace(/<[^>]+>/g, '');
+        const id = 'heading-' + text.replace(/\\s+/g, '-').replace(/[^\\w\\u4e00-\\u9fff-]/g, '').substring(0, 40);
+        tocHtml += `<a href="#${{id}}" class="${{isH3 ? 'toc-h3' : ''}}">${{text}}</a>`;
+    }});
+    tocHtml += '</div>';
+    return tocHtml;
+}}
+
+function renderMarkdown(md) {{
+    if (!md) return '';
+    let html = md;
+
+    // 代码块 (```)
+    html = html.replace(/```(\\w*)\\n?([\\s\\S]*?)```/g, (_, lang, code) => {{
+        return `<pre><code>${{code.trim()}}</code></pre>`;
+    }});
+
+    // 行内代码
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // 标题
+    html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+    html = html.replace(/^### (.+)$/gm, (_, t) => {{ const id = 'heading-' + t.replace(/\\s+/g, '-').replace(/[^\\w\\u4e00-\\u9fff-]/g, '').substring(0,40); return `<h3 id="${{id}}">${{t}}</h3>`; }});
+    html = html.replace(/^## (.+)$/gm, (_, t) => {{ const id = 'heading-' + t.replace(/\\s+/g, '-').replace(/[^\\w\\u4e00-\\u9fff-]/g, '').substring(0,40); return `<h2 id="${{id}}">${{t}}</h2>`; }});
+    html = html.replace(/^# (.+)$/gm, (_, t) => {{ const id = 'heading-' + t.replace(/\\s+/g, '-').replace(/[^\\w\\u4e00-\\u9fff-]/g, '').substring(0,40); return `<h1 id="${{id}}">${{t}}</h1>`; }});
+
+    // 粗体和斜体
+    html = html.replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>');
+    html = html.replace(/\\*(.+?)\\*/g, '<em>$1</em>');
+
+    // 链接
+    html = html.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank">$1</a>');
+
+    // 图片
+    html = html.replace(/!\\[([^\\]]*)\\]\\(([^)]+)\\)/g, '<img src="$2" alt="$1" loading="lazy">');
+
+    // 分割线
+    html = html.replace(/^---$/gm, '<hr>');
+
+    // 引用
+    html = html.replace(/^&gt; (.+)$/gm, '<blockquote><p>$1</p></blockquote>');
+    // 处理多行引用合并
+    html = html.replace(/<\\/blockquote>\\n<blockquote>/g, '\\n');
+
+    // 列表
+    html = html.replace(/^[*-] (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\\/li>\\n?)+/g, '<ul>$&</ul>');
+
+    // 段落
+    html = html.replace(/^(?!<[hupbolc]|<\\/|<hr|<img)(.+)$/gm, '<p>$1</p>');
+
+    // 清理空段落
+    html = html.replace(/<p><\\/p>/g, '');
+    html = html.replace(/<p>\\s*<\\/p>/g, '');
+
+    return html;
+}}
+
+// 搜索事件
+document.getElementById('search-input').addEventListener('input', function(e) {{
+    searchQuery = this.value.trim();
+    renderList();
+}});
+
+// 键盘快捷键
+document.addEventListener('keydown', function(e) {{
+    if (e.key === 'Escape' && document.getElementById('overlay').classList.contains('open')) {{
+        closeArticle();
+    }}
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {{
+        e.preventDefault();
+        document.getElementById('search-input').focus();
+    }}
+    if (document.getElementById('overlay').classList.contains('open')) {{
+        if (e.key === 'ArrowLeft') navigateArticle(-1);
+        if (e.key === 'ArrowRight') navigateArticle(1);
+    }}
+}});
+
+// 初始化
+renderStats();
+renderSourceFilters();
+renderTagFilters();
+renderList();
+</script>
+
+</body>
+</html>"""
+
+
+if __name__ == "__main__":
+    path = generate_site()
+    if path:
+        print(f"\n在浏览器中打开: file:///{path.replace(os.sep, '/')}")

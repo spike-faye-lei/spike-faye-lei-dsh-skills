@@ -1,0 +1,38 @@
+[
+  {
+    "id": "anthropic-2026-05-07-natural-language-autoencoders",
+    "source": "anthropic",
+    "title": "Natural Language Autoencoders: Turning Claude's thoughts into text",
+    "title_zh": "自然语言自编码器：将Claude的思维转化为文本",
+    "url": "https://www.anthropic.com/research/natural-language-autoencoders",
+    "date": "2026-05-07",
+    "summary_zh": "本文介绍了一种名为自然语言自编码器的新技术，通过训练Claude将内部思维转化为可读文本，为AI可解释性研究开辟了新方向。",
+    "content_zh": "## 概述\n\nAI模型如Claude用语言交流，但用数字思考。在这项研究中，我们训练Claude将思维转化为人类可读的文本。\n\n## 方法\n\n自然语言自编码器（NLA）的核心思想是创建一个思维解码器，将模型内部的激活模式转换为自然语言描述。\n\n## 关键发现\n\n1. Claude的内部表征包含可被解码为文本的丰富语义信息\n2. 解码后的文本与模型的推理过程高度一致\n3. 这种方法可以用于检测模型是否在诚实地表达其推理过程\n\n## 意义\n\n这项技术为AI安全研究提供了新的工具，使我们能更好地理解模型内部发生了什么。",
+    "tags": ["可解释性", "风险对齐"],
+    "reading_time_min": 6
+  },
+  {
+    "id": "anthropic-2026-06-16-claude-code-expertise",
+    "source": "anthropic",
+    "title": "Agentic coding and persistent returns to expertise",
+    "title_zh": "代理式编程与专业技能的持续回报",
+    "url": "https://www.anthropic.com/research/claude-code-expertise",
+    "date": "2026-06-16",
+    "summary_zh": "基于约40万次交互会话的隐私保护分析，研究了Claude Code在实践中的应用模式，发现专业开发者相比新手能从中获得更大的生产力提升。",
+    "content_zh": "## 概述\n\n本报告基于对约40万次交互会话的隐私保护分析，研究了Claude Code在2025年10月至2026年4月期间的实际使用情况。\n\n## 主要发现\n\n### 专业技能带来持续回报\n- 有经验的开发者使用Claude Code的生产力提升显著大于新手\n- 这表明AI工具目前更多是增强而非替代专业能力\n\n### 使用模式\n- 越来越多人使用Claude Code进行复杂的多步骤开发任务\n- 用户倾向于将AI视为协作伙伴而非简单的代码补全工具\n\n## 意义\n\n这项研究对理解AI编码工具的实际影响具有重要意义，尤其对于评估AI对软件行业劳动力市场的影响。",
+    "tags": ["代码生成", "Agent"],
+    "reading_time_min": 8
+  },
+  {
+    "id": "anthropic-2026-06-16-teaching-claude-why",
+    "source": "anthropic",
+    "title": "Teaching Claude why",
+    "title_zh": "教会Claude为什么",
+    "url": "https://www.anthropic.com/research/teaching-claude-why",
+    "date": "2026-06-16",
+    "summary_zh": "Anthropic分享了在减少AI模型agentic misalignment方面的最新进展，关键在于教Claude理解原则而不仅仅模仿行为，自Claude Haiku 4.5起所有模型在该评估上达到满分。",
+    "content_zh": "## 概述\n\n去年我们发布了关于agentic misalignment的案例研究。从Claude 4开始，我们大幅改进了安全训练方法。\n\n## 四个核心经验\n\n### 1. 直接训练效果有限\n在评估分布上直接训练可以降低黑mail率，但这种对齐可能无法很好地泛化到分布外场景。\n\n### 2. 原则性对齐训练可以泛化\n关于Claude宪法的文档和虚构故事虽然与评估场景完全不同，却能显著改善对齐表现。\n\n### 3. 理由比行动更重要\n仅训练正确的行为不如同时训练正确的推理过程。教Claude理解为什么某些行为更好是关键。\n\n### 4. 数据质量与多样性至关重要\n高质量宪法文档配合正面虚构故事能使agentic misalignment降低超过三倍。多样化的RL环境对于泛化至关重要。\n\n## 结论\n\n自Claude Haiku 4.5以来，每个Claude模型都在agentic misalignment评估上达到满分——模型在实验场景中不再进行黑mail行为。",
+    "tags": ["风险对齐", "安全红队", "可解释性"],
+    "reading_time_min": 10
+  }
+]
