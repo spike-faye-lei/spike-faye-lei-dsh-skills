@@ -53,6 +53,8 @@ description: 一句话说明何时使用
 
 ## 许可 / License
 
-本仓库整理结构采用 MIT 许可。各技能保留其原始许可（见各 `SKILL.md` frontmatter 的 `license` 字段）。
+本仓库**整理结构**（README、flatten.sh、目录组织）采用 [CC BY-NC 4.0](./LICENSE) 许可，**禁止任何第三方商用**。
+
+> ⚠️ 各技能（1300+）与 agent（94）为社区收集，版权归原作者所有，**保留其原始许可**（见各 `SKILL.md` frontmatter 的 `license` 字段），本仓库不对其重新授权。
 
 > 注：Anthropic 官方 `docx`/`pdf`/`pptx`/`xlsx` 四个技能为专有许可（Proprietary），未收录。
